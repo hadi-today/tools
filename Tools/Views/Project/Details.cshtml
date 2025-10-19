@@ -1,0 +1,2017 @@
+@model ProjectDetailsViewModel
+@using System.Linq
+
+@{
+    ViewData["Title"] = Model.Project.Name;
+
+    var columns = new[]
+    {
+new { Title = "To Do", Status = "To Do", Description = "Tasks that haven't been started yet." },
+new { Title = "In Progress", Status = "In Progress", Description = "Work that is currently being handled." },
+new { Title = "Done", Status = "Done", Description = "Completed deliverables." }
+};
+
+    var members = Model.Members;
+    var canManageAssignments = Model.CanManageAssignments;
+    var canManageMembers = Model.CanManageMembers;
+    var canViewAllTasks = Model.CanViewAllTasks;
+    var canEditEstimates = Model.CanEditEstimates;
+    var estimateSummary = Model.EstimateSummary;
+}
+
+<section class="project-details">
+    <header class="project-header">
+        <div>
+            <p class="project-subtitle">Project details</p>
+            <h1 class="project-title">@Model.Project.Name</h1>
+            @if (!string.IsNullOrWhiteSpace(Model.Project.Description))
+            {
+                <p class="project-description">@Model.Project.Description</p>
+            }
+        </div>
+        <a class="project-action" asp-controller="Project" asp-action="CreateWizard">Create a new project</a>
+    </header>
+
+    <section class="project-members">
+        <div class="project-members-header">
+            <div>
+                <h2 class="project-members-title">Team members</h2>
+                <p class="project-members-description">Collaborators who can access this project and its tasks.</p>
+            </div>
+            @if (canManageMembers)
+            {
+                <form asp-action="InviteMember" method="post" class="project-member-form">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="projectId" value="@Model.Project.Id" />
+                    <label class="project-member-label" for="member-email">Invite by email</label>
+                    <div class="project-member-input-group">
+                        <input id="member-email" name="email" type="email" class="project-member-input"
+                            placeholder="person@example.com" required autocomplete="off" />
+                        <button type="submit" class="project-member-submit">Send invite</button>
+                    </div>
+                </form>
+            }
+        </div>
+
+        <ul class="project-members-list">
+            @if (members.Count == 0)
+            {
+                <li class="project-member-item">
+                    <div class="project-member-info">
+                        <span class="project-member-name">No members yet</span>
+                        <span class="project-member-email">Invite someone to get started.</span>
+                    </div>
+                </li>
+            }
+            else
+            {
+                foreach (var member in members)
+                {
+                    <li class="project-member-item">
+                        <div class="project-member-info">
+                            <span class="project-member-name">@member.DisplayName</span>
+                            @if (!string.IsNullOrWhiteSpace(member.Email))
+                            {
+                                <span class="project-member-email">@member.Email</span>
+                            }
+                        </div>
+                        <span class="project-member-role">@member.Role</span>
+                    </li>
+                }
+            }
+        </ul>
+    </section>
+
+    @if (estimateSummary is not null)
+    {
+        var totalHoursDisplay = $"{estimateSummary.TotalEstimatedHours:0.##} h";
+        var totalCostDisplay = $"{estimateSummary.TotalEstimatedCost:0.##}";
+        <section class="project-estimate" data-estimate-section>
+            <div class="project-estimate-header">
+                <div>
+                    <h2 class="project-estimate-title">Project estimate</h2>
+                    <p class="project-estimate-description">Overview of estimated hours and cost for current assignments.
+                    </p>
+                </div>
+                <div class="project-estimate-totals">
+                    <div class="project-estimate-total">
+                        <span class="project-estimate-total-label">Total estimated hours</span>
+                        <strong class="project-estimate-total-value" data-estimate-total-hours>@totalHoursDisplay</strong>
+                    </div>
+                    <div class="project-estimate-total">
+                        <span class="project-estimate-total-label">Estimated cost</span>
+                        <strong class="project-estimate-total-value" data-estimate-total-cost>@totalCostDisplay</strong>
+                    </div>
+                </div>
+            </div>
+            <div class="project-estimate-table-wrapper">
+                <table class="project-estimate-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Member</th>
+                            <th scope="col">Hours</th>
+                            <th scope="col">Hourly rate</th>
+                            <th scope="col">Estimated cost</th>
+                        </tr>
+                    </thead>
+                    <tbody data-estimate-table-body>
+                        @if (estimateSummary.MemberSummaries.Count == 0)
+                        {
+                            <tr data-estimate-empty-row>
+                                <td colspan="4">No estimated hours have been recorded yet.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var memberSummary in estimateSummary.MemberSummaries)
+                            {
+                                var hoursDisplay = $"{memberSummary.AssignedHours:0.##} h";
+                                var rateDisplay = $"{memberSummary.HourlyRate:0.##} / h";
+                                var costDisplay = $"{memberSummary.EstimatedCost:0.##}";
+                                <tr data-estimate-member-row data-user-id="@memberSummary.UserId" @(memberSummary.IsUnassigned ?
+                                                                                                                          "data-estimate-unassigned=\"true\"" : null)>
+                                    <th scope="row">@memberSummary.DisplayName</th>
+                                    <td>@hoursDisplay</td>
+                                    <td>@rateDisplay</td>
+                                    <td>@costDisplay</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+
+    <section class="tasks-section">
+        <h2 class="tasks-heading">Task board</h2>
+        @if (!canViewAllTasks)
+        {
+            <p class="tasks-notice">You can only view tasks that are assigned to you.</p>
+        }
+        @if (Model.Tasks.Count == 0)
+        {
+            <p class="tasks-empty">No tasks have been created for this project yet.</p>
+        }
+        else
+        {
+            <div class="kanban-board">
+                @foreach (var column in columns)
+                {
+                    var columnTasks = Model.Tasks
+                    .Where(task => string.Equals(task.Task.Status, column.Status, System.StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(task => task.Task.Title)
+                    .ToList();
+
+                    <section class="kanban-column">
+                        <header class="kanban-column-header">
+                            <h3 class="kanban-column-title">@column.Title</h3>
+                            <p class="kanban-column-description">@column.Description</p>
+                            <span class="kanban-column-count">@columnTasks.Count task@(columnTasks.Count == 1 ? string.Empty :
+                                                        "s")</span>
+                        </header>
+
+                        <p class="kanban-column-empty" data-empty-message @(columnTasks.Count == 0 ? string.Empty : "hidden")>No
+                            tasks in this stage.</p>
+                        <div class="kanban-column-tasks" data-status="@column.Status">
+                            @foreach (var task in columnTasks)
+                            {
+                                @await Html.PartialAsync("_TaskCardPartial", task)
+                            }
+                        </div>
+                    </section>
+                }
+            </div>
+        }
+    </section>
+</section>
+
+<div id="gitLinkModal" class="kanban-modal" hidden>
+    <div class="kanban-modal-backdrop" data-modal-close></div>
+    <div class="kanban-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="gitLinkModalTitle">
+        <header class="kanban-modal-header">
+            <h2 id="gitLinkModalTitle" class="kanban-modal-title">Add Git link</h2>
+            <button type="button" class="kanban-modal-close" data-modal-close aria-label="Close modal">&times;</button>
+        </header>
+        <div class="kanban-modal-body">
+            <label for="gitLinkInput" class="kanban-modal-label">Repository URL</label>
+            <input id="gitLinkInput" name="gitLinkInput" type="url" class="kanban-modal-input"
+                placeholder="https://github.com/your-repo" autocomplete="off" />
+        </div>
+        <footer class="kanban-modal-footer">
+            <button type="button" class="kanban-modal-secondary" data-modal-close>Cancel</button>
+            <button type="button" class="kanban-modal-action" data-modal-confirm>Save link</button>
+        </footer>
+    </div>
+</div>
+
+<style>
+    .project-details {
+        background: #fff;
+        border-radius: 1.5rem;
+        box-shadow: 0 25px 60px rgba(15, 23, 42, 0.08);
+        padding: 3rem;
+        display: flex;
+        flex-direction: column;
+        gap: 3rem;
+    }
+
+    .project-header {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    @@media (min-width: 992px) {
+        .project-header {
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+        }
+    }
+
+    .project-subtitle {
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.2rem;
+        color: #6366f1;
+        margin-bottom: 0.5rem;
+    }
+
+    .project-title {
+        font-size: clamp(2rem, 2.8vw, 3rem);
+        font-weight: 700;
+        color: #0f172a;
+        margin-bottom: 1rem;
+    }
+
+    .project-description {
+        font-size: 1rem;
+        color: #475569;
+        max-width: 60ch;
+    }
+
+    .project-members {
+        background: #f8fafc;
+        border-radius: 1.25rem;
+        border: 1px solid #e2e8f0;
+        padding: 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .project-estimate {
+        background: #f1f5f9;
+        border-radius: 1.25rem;
+        border: 1px solid #e2e8f0;
+        padding: 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .project-estimate-header {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    @@media (min-width: 992px) {
+        .project-estimate-header {
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+        }
+    }
+
+    .project-estimate-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #0f172a;
+    }
+
+    .project-estimate-description {
+        color: #475569;
+        max-width: 60ch;
+    }
+
+    .project-estimate-totals {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 1rem;
+    }
+
+    .project-estimate-total {
+        background: #fff;
+        border-radius: 1rem;
+        border: 1px solid #e2e8f0;
+        padding: 1rem 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .project-estimate-total-label {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+    }
+
+    .project-estimate-total-value {
+        font-size: 1.35rem;
+        font-weight: 600;
+        color: #0f172a;
+    }
+
+    .project-estimate-table-wrapper {
+        overflow-x: auto;
+    }
+
+    .project-estimate-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 480px;
+    }
+
+    .project-estimate-table th,
+    .project-estimate-table td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+        white-space: nowrap;
+    }
+
+    .project-estimate-table th {
+        font-weight: 600;
+        color: #0f172a;
+        background: rgba(148, 163, 184, 0.1);
+    }
+
+    .project-estimate-table tbody tr[data-estimate-unassigned="true"] th {
+        color: #475569;
+    }
+
+    .project-estimate-table tbody tr[data-estimate-empty-row] td,
+    .project-estimate-table tbody tr[data-estimate-empty-row] th {
+        text-align: center;
+        color: #94a3b8;
+    }
+
+    .project-members-header {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .project-members-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #0f172a;
+        margin: 0 0 0.5rem 0;
+    }
+
+    .project-members-description {
+        margin: 0;
+        color: #475569;
+    }
+
+    .project-member-form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .project-member-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #475569;
+    }
+
+    .project-member-input-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .project-member-input {
+        border: 1px solid #cbd5f5;
+        border-radius: 0.75rem;
+        padding: 0.6rem 0.85rem;
+        font-size: 0.95rem;
+    }
+
+    .project-member-input:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+
+    .project-member-submit {
+        align-self: flex-start;
+        background: #0ea5e9;
+        color: #fff;
+        border: none;
+        border-radius: 999px;
+        padding: 0.6rem 1.5rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .project-member-submit:hover,
+    .project-member-submit:focus {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 24px rgba(14, 165, 233, 0.3);
+        color: #fff;
+    }
+
+    .project-members-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .project-member-item {
+        background: #fff;
+        border-radius: 1rem;
+        border: 1px solid #e2e8f0;
+        padding: 0.85rem 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .project-member-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .project-member-name {
+        font-weight: 600;
+        color: #0f172a;
+        word-break: break-word;
+    }
+
+    .project-member-email {
+        font-size: 0.9rem;
+        color: #64748b;
+        word-break: break-word;
+    }
+
+    .project-member-role {
+        align-self: flex-start;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #6366f1;
+        background: rgba(99, 102, 241, 0.12);
+        border-radius: 999px;
+        padding: 0.25rem 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    @@media (min-width: 768px) {
+        .project-members-header {
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .project-member-form {
+            max-width: 360px;
+        }
+
+        .project-member-input-group {
+            flex-direction: row;
+            align-items: center;
+        }
+
+        .project-member-input {
+            flex: 1;
+        }
+
+        .project-member-item {
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+        }
+    }
+
+    .project-action {
+        align-self: flex-start;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: #fff;
+        font-weight: 600;
+        padding: 0.85rem 1.75rem;
+        border-radius: 999px;
+        text-decoration: none;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: 0 15px 35px rgba(99, 102, 241, 0.25);
+    }
+
+    .project-action:hover,
+    .project-action:focus {
+        transform: translateY(-2px);
+        box-shadow: 0 20px 45px rgba(99, 102, 241, 0.35);
+        color: #fff;
+    }
+
+    .tasks-section {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .tasks-heading {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #1e293b;
+    }
+
+    .tasks-notice {
+        background: rgba(14, 165, 233, 0.1);
+        border-radius: 0.75rem;
+        padding: 0.85rem 1.2rem;
+        color: #0369a1;
+        border: 1px solid rgba(14, 165, 233, 0.2);
+        margin: 0;
+    }
+
+    .tasks-empty {
+        background: #f1f5f9;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        color: #475569;
+        margin: 0;
+    }
+
+    .kanban-board {
+        display: grid;
+        gap: 1.5rem;
+    }
+
+    @@media (min-width: 992px) {
+        .kanban-board {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
+    .kanban-column {
+        background: #f8fafc;
+        border-radius: 1.25rem;
+        border: 1px solid #e2e8f0;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        padding: 1.75rem;
+        min-height: 280px;
+    }
+
+    .kanban-column-header {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .kanban-column-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #1f2937;
+        margin: 0;
+    }
+
+    .kanban-column-description {
+        font-size: 0.9rem;
+        color: #64748b;
+        margin: 0;
+    }
+
+    .kanban-column-count {
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: #6366f1;
+    }
+
+    .kanban-column-empty {
+        font-size: 0.95rem;
+        color: #94a3b8;
+        margin: 0;
+    }
+
+    .kanban-column-tasks {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        min-height: 3rem;
+        padding-bottom: 0.5rem;
+    }
+
+    .kanban-modal {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1050;
+    }
+
+    .kanban-modal[hidden] {
+        display: none;
+    }
+
+    .kanban-modal-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.35);
+        backdrop-filter: blur(2px);
+        z-index: 0;
+    }
+
+    .kanban-modal-dialog {
+        position: relative;
+        background: #fff;
+        border-radius: 1.25rem;
+        box-shadow: 0 25px 60px rgba(15, 23, 42, 0.2);
+        padding: 2rem;
+        max-width: 460px;
+        width: calc(100% - 3rem);
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        z-index: 1;
+        pointer-events: auto;
+    }
+
+    .kanban-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .kanban-modal-title {
+        font-size: 1.4rem;
+        font-weight: 600;
+        margin: 0;
+        color: #0f172a;
+    }
+
+    .kanban-modal-close {
+        background: none;
+        border: none;
+        font-size: 1.75rem;
+        line-height: 1;
+        color: #94a3b8;
+        cursor: pointer;
+        padding: 0.25rem;
+    }
+
+    .kanban-modal-close:hover,
+    .kanban-modal-close:focus {
+        color: #475569;
+    }
+
+    .kanban-modal-label {
+        display: block;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #475569;
+        margin-bottom: 0.5rem;
+    }
+
+    .kanban-modal-input {
+        width: 100%;
+        border-radius: 0.75rem;
+        border: 1px solid #cbd5f5;
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+        color: #0f172a;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .kanban-modal-input:focus {
+        border-color: #6366f1;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+
+    .kanban-modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+    }
+
+    .kanban-modal-secondary {
+        background: none;
+        border: none;
+        color: #475569;
+        font-weight: 600;
+        padding: 0.75rem 1.25rem;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: color 0.2s ease, background 0.2s ease;
+    }
+
+    .kanban-modal-secondary:hover,
+    .kanban-modal-secondary:focus {
+        color: #0f172a;
+        background: #e2e8f0;
+    }
+
+    .kanban-modal-action {
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        border-radius: 999px;
+        padding: 0.75rem 1.5rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .kanban-modal-action:hover,
+    .kanban-modal-action:focus {
+        transform: translateY(-2px);
+        box-shadow: 0 15px 30px rgba(99, 102, 241, 0.35);
+    }
+
+    .task-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 1.25rem;
+        padding: 1.5rem;
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .task-card:hover,
+    .task-card:focus-within {
+        transform: translateY(-4px);
+        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    .task-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+    }
+
+    .task-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .task-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #0f172a;
+    }
+
+    .task-status {
+        background: #e0e7ff;
+        color: #4338ca;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 0.35rem 0.85rem;
+        border-radius: 999px;
+        white-space: nowrap;
+    }
+
+    .task-git-indicator {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        background: #0f172a;
+        color: #fff;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .task-git-indicator:hover,
+    .task-git-indicator:focus {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(15, 23, 42, 0.25);
+    }
+
+    .task-git-icon {
+        width: 1.1rem;
+        height: 1.1rem;
+        fill: currentColor;
+    }
+
+    .task-description {
+        color: #475569;
+        margin: 0;
+    }
+
+    .task-meta {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        margin: 0;
+    }
+
+    .task-meta div {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .task-meta dt {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #64748b;
+    }
+
+    .task-meta dd {
+        margin: 0;
+        font-size: 0.95rem;
+        color: #0f172a;
+    }
+
+    .task-estimate-form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .task-estimate-input-group {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .task-estimate-input {
+        flex: 1;
+        border-radius: 0.75rem;
+        border: 1px solid #cbd5f5;
+        padding: 0.5rem 0.85rem;
+        font-size: 0.95rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .task-estimate-input:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+
+    .task-estimate-input:disabled {
+        opacity: 0.6;
+        background: #e2e8f0;
+        cursor: not-allowed;
+    }
+
+    .task-estimate-save,
+    .task-estimate-clear {
+        border: none;
+        border-radius: 999px;
+        padding: 0.45rem 1.1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .task-estimate-save {
+        background: #6366f1;
+        color: #fff;
+        box-shadow: 0 12px 24px rgba(99, 102, 241, 0.25);
+    }
+
+    .task-estimate-save:hover,
+    .task-estimate-save:focus {
+        transform: translateY(-2px);
+        box-shadow: 0 20px 35px rgba(99, 102, 241, 0.35);
+    }
+
+    .task-estimate-save:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .task-estimate-clear {
+        background: #e2e8f0;
+        color: #1e293b;
+    }
+
+    .task-estimate-clear:hover,
+    .task-estimate-clear:focus {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 24px rgba(148, 163, 184, 0.35);
+    }
+
+    .task-estimate-helper {
+        font-size: 0.85rem;
+        color: #64748b;
+        margin: 0;
+    }
+
+    .task-estimate-status {
+        font-size: 0.85rem;
+        margin: 0;
+        display: none;
+    }
+
+    .task-estimate-status[data-state="error"] {
+        color: #dc2626;
+        display: block;
+    }
+
+    .task-estimate-status[data-state="success"] {
+        color: #16a34a;
+        display: block;
+    }
+
+    .task-link {
+        color: #6366f1;
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .task-link:hover,
+    .task-link:focus {
+        text-decoration: underline;
+    }
+
+    .task-comments {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-top: 0.5rem;
+    }
+
+    .task-comments-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .task-comments-title {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #0f172a;
+    }
+
+    .task-comments-empty {
+        margin: 0;
+        color: #94a3b8;
+        font-size: 0.9rem;
+    }
+
+    .task-comment-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .task-comment {
+        background: #f8fafc;
+        border-radius: 0.85rem;
+        padding: 0.75rem 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .task-comment-header {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+
+    .task-comment-author {
+        font-weight: 600;
+        color: #1e293b;
+        word-break: break-word;
+    }
+
+    .task-comment-timestamp {
+        font-size: 0.75rem;
+        color: #94a3b8;
+    }
+
+    .task-comment-body {
+        margin: 0;
+        color: #475569;
+        font-size: 0.95rem;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    .task-assignment {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .task-assignee-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .task-assignee-display {
+        font-weight: 600;
+        color: #0f172a;
+    }
+
+    .task-assignee-email {
+        font-size: 0.85rem;
+        color: #64748b;
+        word-break: break-word;
+    }
+
+    .task-assignee-select {
+        border: 1px solid #cbd5f5;
+        border-radius: 0.75rem;
+        padding: 0.45rem 0.75rem;
+        font-size: 0.95rem;
+        width: 100%;
+    }
+
+    .task-assignee-select:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+
+    .task-comment-form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .task-comment-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #475569;
+    }
+
+    .task-comment-input {
+        border: 1px solid #cbd5f5;
+        border-radius: 0.85rem;
+        padding: 0.65rem 0.85rem;
+        font-size: 0.95rem;
+        resize: vertical;
+        min-height: 3rem;
+    }
+
+    .task-comment-input:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+
+    .task-comment-actions {
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .task-comment-submit {
+        background: #0ea5e9;
+        color: #fff;
+        border: none;
+        border-radius: 999px;
+        padding: 0.5rem 1.25rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .task-comment-submit:hover,
+    .task-comment-submit:focus {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 24px rgba(14, 165, 233, 0.3);
+    }
+
+    .task-comment-submit:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .task-card-ghost {
+        opacity: 0.4;
+    }
+
+    .task-card-dragging {
+        cursor: grabbing;
+    }
+
+    .task-card-chosen {
+        box-shadow: 0 25px 45px rgba(15, 23, 42, 0.12);
+    }
+
+    .kanban-column-tasks.is-drag-over {
+        background: rgba(99, 102, 241, 0.08);
+        border-radius: 1rem;
+        transition: background 0.2s ease;
+    }
+</style>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js" crossorigin="anonymous"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            if (typeof Sortable === 'undefined') {
+                return;
+            }
+
+            const board = document.querySelector('.kanban-board');
+            if (!board) {
+                return;
+            }
+
+            const gitLinkModal = document.getElementById('gitLinkModal');
+            const modalInput = gitLinkModal ? gitLinkModal.querySelector('.kanban-modal-input') : null;
+            const modalConfirmButton = gitLinkModal ? gitLinkModal.querySelector('[data-modal-confirm]') : null;
+            let resolveGitModal = null;
+
+            const isDoneStatus = (status) => typeof status === 'string' && status.trim().toLowerCase() === 'done';
+
+            const openGitModal = (initialValue = '') => {
+                if (!gitLinkModal) {
+                    return;
+                }
+
+                gitLinkModal.removeAttribute('hidden');
+                document.body.style.setProperty('overflow', 'hidden');
+
+                if (modalInput) {
+                    modalInput.value = initialValue;
+                    modalInput.focus();
+                    modalInput.select();
+                }
+            };
+
+            const closeGitModal = (result) => {
+                if (!gitLinkModal) {
+                    return;
+                }
+
+                if (!gitLinkModal.hasAttribute('hidden')) {
+                    gitLinkModal.setAttribute('hidden', 'hidden');
+                    document.body.style.removeProperty('overflow');
+                }
+
+                const resolver = resolveGitModal;
+                resolveGitModal = null;
+
+                if (resolver) {
+                    resolver(result);
+                }
+            };
+
+            const requestCompletionUrl = (initialValue = '') => {
+                if (!gitLinkModal) {
+                    const sanitizedValue = typeof initialValue === 'string' && initialValue.trim().length > 0
+                        ? initialValue
+                        : null;
+
+                    return Promise.resolve({ url: sanitizedValue, canceled: false });
+                }
+
+                openGitModal(initialValue);
+
+                return new Promise(resolve => {
+                    resolveGitModal = resolve;
+                });
+            };
+
+            if (gitLinkModal) {
+                const cancelElements = gitLinkModal.querySelectorAll('[data-modal-close]');
+                cancelElements.forEach(element => {
+                    element.addEventListener('click', () => closeGitModal({ url: null, canceled: true }));
+                });
+
+                modalConfirmButton?.addEventListener('click', () => {
+                    const value = modalInput ? modalInput.value.trim() : '';
+                    closeGitModal({ url: value.length > 0 ? value : null, canceled: false });
+                });
+
+                gitLinkModal.addEventListener('click', event => {
+                    if (event.target instanceof Element && event.target.matches('[data-modal-close]')) {
+                        closeGitModal({ url: null, canceled: true });
+                    }
+                });
+
+                document.addEventListener('keydown', event => {
+                    if (event.key === 'Escape' && !gitLinkModal.hasAttribute('hidden')) {
+                        closeGitModal({ url: null, canceled: true });
+                    }
+                });
+            }
+
+            const getRequestVerificationToken = () => {
+                const tokenElement = document.querySelector('meta[name="request-verification-token"]');
+                return tokenElement ? tokenElement.getAttribute('content') : null;
+            };
+
+            const formatDecimal = (value, options = {}) => {
+                const formattingOptions = Object.assign({ minimumFractionDigits: 0, maximumFractionDigits: 2 }, options);
+                const number = typeof value === 'number' ? value : Number(value);
+                if (!Number.isFinite(number)) {
+                    return (0).toLocaleString(undefined, formattingOptions);
+                }
+
+                return number.toLocaleString(undefined, formattingOptions);
+            };
+
+            const formatHoursShort = (value) => `${formatDecimal(value, { maximumFractionDigits: 2 })} h`;
+
+            const formatHoursLong = (value) => {
+                if (value === null || value === undefined) {
+                    return 'Not set';
+                }
+
+                const number = typeof value === 'number' ? value : Number(value);
+                if (!Number.isFinite(number)) {
+                    return 'Not set';
+                }
+
+                const rounded = Number(number.toFixed(2));
+                const base = formatDecimal(rounded, { maximumFractionDigits: 2 });
+                const label = Math.abs(rounded) === 1 ? 'hour' : 'hours';
+                return `${base} ${label}`;
+            };
+
+            const formatRate = (value) => `${formatDecimal(value, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / h`;
+
+            const updateEstimateDisplay = (taskElement, hours) => {
+                if (!taskElement) {
+                    return;
+                }
+
+                const displayElement = taskElement.querySelector('[data-estimate-display]');
+                if (!displayElement) {
+                    return;
+                }
+
+                displayElement.textContent = formatHoursLong(hours);
+            };
+
+            const updateEstimateSummary = (summary) => {
+                const section = document.querySelector('[data-estimate-section]');
+                if (!section || !summary) {
+                    return;
+                }
+
+                const totalHoursElement = section.querySelector('[data-estimate-total-hours]');
+                if (totalHoursElement) {
+                    totalHoursElement.textContent = formatHoursShort(summary.totalHours ?? 0);
+                }
+
+                const totalCostElement = section.querySelector('[data-estimate-total-cost]');
+                if (totalCostElement) {
+                    totalCostElement.textContent = formatDecimal(summary.totalCost ?? 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                }
+
+                const tableBody = section.querySelector('[data-estimate-table-body]');
+                if (!tableBody) {
+                    return;
+                }
+
+                tableBody.innerHTML = '';
+
+                const members = Array.isArray(summary.members) ? summary.members : [];
+
+                if (members.length === 0) {
+                    const emptyRow = document.createElement('tr');
+                    emptyRow.dataset.estimateEmptyRow = 'true';
+
+                    const emptyCell = document.createElement('td');
+                    emptyCell.colSpan = 4;
+                    emptyCell.textContent = 'No estimated hours have been recorded yet.';
+
+                    emptyRow.appendChild(emptyCell);
+                    tableBody.appendChild(emptyRow);
+                    return;
+                }
+
+                members.forEach(member => {
+                    const row = document.createElement('tr');
+                    row.dataset.userId = member.userId ?? '';
+
+                    if (member.isUnassigned) {
+                        row.dataset.estimateUnassigned = 'true';
+                    }
+
+                    const nameCell = document.createElement('th');
+                    nameCell.setAttribute('scope', 'row');
+                    nameCell.textContent = member.displayName ?? (member.isUnassigned ? 'Unassigned' : (member.userId ?? 'Member'));
+
+                    const hoursCell = document.createElement('td');
+                    hoursCell.textContent = formatHoursShort(member.assignedHours ?? 0);
+
+                    const rateCell = document.createElement('td');
+                    rateCell.textContent = formatRate(member.hourlyRate ?? 0);
+
+                    const costCell = document.createElement('td');
+                    costCell.textContent = formatDecimal(member.estimatedCost ?? 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                    row.append(nameCell, hoursCell, rateCell, costCell);
+                    tableBody.appendChild(row);
+                });
+            };
+
+            const updateBadge = (taskElement, status) => {
+                const badge = taskElement.querySelector('.task-status');
+                if (badge) {
+                    badge.textContent = status;
+                }
+            };
+
+            const updateColumnSummaries = () => {
+                document.querySelectorAll('.kanban-column').forEach(column => {
+                    const tasksContainer = column.querySelector('.kanban-column-tasks');
+                    const countElement = column.querySelector('.kanban-column-count');
+                    const emptyMessage = column.querySelector('.kanban-column-empty');
+                    const taskCards = tasksContainer ? tasksContainer.querySelectorAll('.task-card') : [];
+
+                    if (countElement) {
+                        const taskCount = taskCards.length;
+                        countElement.textContent = `${taskCount} task${taskCount === 1 ? '' : 's'}`;
+                    }
+
+                    if (emptyMessage) {
+                        if (taskCards.length === 0) {
+                            emptyMessage.removeAttribute('hidden');
+                        } else {
+                            emptyMessage.setAttribute('hidden', 'hidden');
+                        }
+                    }
+                });
+            };
+
+            const sendUpdate = (taskId, status, options = {}) => {
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                };
+                const token = getRequestVerificationToken();
+                if (token) {
+                    headers['RequestVerificationToken'] = token;
+                }
+
+                const payload = {
+                    taskId,
+                    newStatus: status
+                };
+
+                if (options.includeCompletionUrl) {
+                    payload.completionUrl = options.completionUrl ?? null;
+                }
+
+                return fetch('/api/task/update-status', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(payload)
+                });
+            };
+
+            const sendComment = (taskId, content) => {
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                };
+                const token = getRequestVerificationToken();
+                if (token) {
+                    headers['RequestVerificationToken'] = token;
+                }
+
+                return fetch('/api/task/add-comment', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ taskId, content })
+                });
+            };
+
+            const sendAssignment = (taskId, userId) => {
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                };
+                const token = getRequestVerificationToken();
+                if (token) {
+                    headers['RequestVerificationToken'] = token;
+                }
+
+                return fetch('/api/task/assign-user', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ taskId, userId })
+                });
+            };
+
+            const sendEstimate = (taskId, estimatedHours) => {
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                };
+                const token = getRequestVerificationToken();
+                if (token) {
+                    headers['RequestVerificationToken'] = token;
+                }
+
+                return fetch('/api/task/update-estimate', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ taskId, estimatedHours })
+                });
+            };
+
+            const formatTimestamp = (value) => {
+                const date = value instanceof Date ? value : new Date(value);
+                if (Number.isNaN(date.getTime())) {
+                    return '';
+                }
+
+                return date.toLocaleString();
+            };
+
+            const createCommentElement = (comment) => {
+                const commentElement = document.createElement('li');
+                commentElement.classList.add('task-comment');
+                if (comment.id !== undefined) {
+                    commentElement.dataset.commentId = comment.id;
+                }
+
+                const header = document.createElement('div');
+                header.classList.add('task-comment-header');
+
+                const author = document.createElement('span');
+                author.classList.add('task-comment-author');
+                author.textContent = comment.authorName ?? '';
+
+                const timestamp = document.createElement('time');
+                timestamp.classList.add('task-comment-timestamp');
+                const dateValue = comment.createdAt ?? new Date();
+                const dateInstance = dateValue instanceof Date ? dateValue : new Date(dateValue);
+                const hasValidDate = !Number.isNaN(dateInstance.getTime());
+                timestamp.dateTime = hasValidDate ? dateInstance.toISOString() : new Date().toISOString();
+                timestamp.textContent = formatTimestamp(hasValidDate ? dateInstance : new Date());
+
+                header.append(author, timestamp);
+
+                const body = document.createElement('p');
+                body.classList.add('task-comment-body');
+                body.textContent = comment.content ?? '';
+
+                commentElement.append(header, body);
+
+                return commentElement;
+            };
+
+            const updateAssignmentDisplay = (taskElement, assignment) => {
+                if (!taskElement) {
+                    return;
+                }
+
+                const displayElement = taskElement.querySelector('[data-assignee-display]');
+                const emailElement = taskElement.querySelector('[data-assignee-email]');
+                const selectElement = taskElement.querySelector('[data-assignee-select]');
+
+                const assignedId = assignment && typeof assignment.id === 'string' ? assignment.id : '';
+                const assignedName = assignment && assignment.displayName ? assignment.displayName : 'Unassigned';
+                const assignedEmail = assignment && assignment.email ? assignment.email : null;
+
+                if (displayElement) {
+                    displayElement.textContent = assignedName;
+                }
+
+                if (emailElement) {
+                    if (assignedEmail) {
+                        emailElement.textContent = assignedEmail;
+                        emailElement.removeAttribute('hidden');
+                    } else {
+                        emailElement.textContent = '';
+                        emailElement.setAttribute('hidden', 'hidden');
+                    }
+                }
+
+                if (selectElement && selectElement.value !== assignedId) {
+                    selectElement.value = assignedId;
+                }
+
+                if (selectElement) {
+                    selectElement.dataset.previousValue = assignedId;
+                }
+
+                taskElement.dataset.assignedUserId = assignedId;
+            };
+
+            const toggleCommentEmptyState = (section) => {
+                if (!section) {
+                    return;
+                }
+
+                const emptyElement = section.querySelector('[data-comments-empty]');
+                const list = section.querySelector('[data-comment-list]');
+                if (!emptyElement || !list) {
+                    return;
+                }
+
+                const hasComments = list.querySelectorAll('.task-comment').length > 0;
+                if (hasComments) {
+                    emptyElement.setAttribute('hidden', 'hidden');
+                } else {
+                    emptyElement.removeAttribute('hidden');
+                }
+            };
+
+            const attachEstimateHandlers = () => {
+                document.querySelectorAll('[data-estimate-form]').forEach(form => {
+                    if (form.dataset.initialised === 'true') {
+                        return;
+                    }
+
+                    form.dataset.initialised = 'true';
+
+                    const taskCard = form.closest('.task-card');
+                    const input = form.querySelector('[data-estimate-input]');
+                    const clearButton = form.querySelector('[data-estimate-clear]');
+                    const statusElement = form.querySelector('[data-estimate-status]');
+
+                    const updateClearVisibility = () => {
+                        if (!clearButton) {
+                            return;
+                        }
+
+                        const hasValue = input && input.value.trim().length > 0;
+                        if (hasValue) {
+                            clearButton.removeAttribute('hidden');
+                        } else {
+                            clearButton.setAttribute('hidden', 'hidden');
+                        }
+                    };
+
+                    if (input) {
+                        input.addEventListener('input', () => {
+                            if (statusElement) {
+                                statusElement.setAttribute('hidden', 'hidden');
+                                statusElement.textContent = '';
+                                delete statusElement.dataset.state;
+                            }
+
+                            updateClearVisibility();
+                        });
+
+                        updateClearVisibility();
+                    }
+
+                    if (clearButton && input) {
+                        clearButton.addEventListener('click', () => {
+                            input.value = '';
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.focus();
+                        });
+                    }
+
+                    form.addEventListener('submit', event => {
+                        event.preventDefault();
+
+                        if (!taskCard) {
+                            return;
+                        }
+
+                        const taskId = taskCard.dataset.taskId;
+                        if (!taskId) {
+                            return;
+                        }
+
+                        let estimatedHours = null;
+                        if (input) {
+                            const rawValue = input.value.trim();
+                            if (rawValue.length > 0) {
+                                const parsedValue = Number(rawValue);
+                                if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+                                    if (statusElement) {
+                                        statusElement.dataset.state = 'error';
+                                        statusElement.textContent = 'Enter a valid non-negative number of hours.';
+                                        statusElement.removeAttribute('hidden');
+                                    }
+
+                                    return;
+                                }
+
+                                estimatedHours = parsedValue;
+                            }
+                        }
+
+                        if (statusElement) {
+                            statusElement.setAttribute('hidden', 'hidden');
+                            statusElement.textContent = '';
+                            delete statusElement.dataset.state;
+                        }
+
+                        const saveButton = form.querySelector('[data-estimate-save]');
+
+                        if (saveButton) {
+                            saveButton.disabled = true;
+                        }
+
+                        if (input) {
+                            input.disabled = true;
+                        }
+
+                        sendEstimate(taskId, estimatedHours)
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error('Request failed');
+                                }
+
+                                return response.json();
+                            })
+                            .then(data => {
+                                if (!data || !data.success) {
+                                    throw new Error('Unexpected response');
+                                }
+
+                                const newHours = data.estimatedHours ?? null;
+                                updateEstimateDisplay(taskCard, newHours);
+
+                                if (input) {
+                                    input.value = newHours === null ? '' : String(newHours);
+                                    input.disabled = false;
+                                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                                }
+
+                                if (statusElement) {
+                                    statusElement.dataset.state = 'success';
+                                    statusElement.textContent = 'Estimate saved.';
+                                    statusElement.removeAttribute('hidden');
+                                    window.setTimeout(() => {
+                                        if (statusElement) {
+                                            statusElement.setAttribute('hidden', 'hidden');
+                                        }
+                                    }, 2000);
+                                }
+
+                                if (data.summary) {
+                                    updateEstimateSummary(data.summary);
+                                }
+
+                                updateClearVisibility();
+                            })
+                            .catch(error => {
+                                console.error('Failed to update estimate.', error);
+                                if (statusElement) {
+                                    statusElement.dataset.state = 'error';
+                                    statusElement.textContent = 'Unable to save estimate. Please try again.';
+                                    statusElement.removeAttribute('hidden');
+                                }
+                            })
+                            .finally(() => {
+                                if (saveButton) {
+                                    saveButton.disabled = false;
+                                }
+
+                                if (input) {
+                                    input.disabled = false;
+                                }
+
+                                updateClearVisibility();
+                            });
+                    });
+                });
+            };
+
+            const attachCommentHandlers = () => {
+                document.querySelectorAll('.task-comment-form').forEach(form => {
+                    if (form.dataset.initialised === 'true') {
+                        return;
+                    }
+
+                    form.dataset.initialised = 'true';
+
+                    form.addEventListener('submit', event => {
+                        event.preventDefault();
+
+                        const taskCard = form.closest('.task-card');
+                        if (!taskCard) {
+                            return;
+                        }
+
+                        const textarea = form.querySelector('.task-comment-input');
+                        if (!textarea) {
+                            return;
+                        }
+
+                        const content = textarea.value.trim();
+                        if (content.length === 0) {
+                            return;
+                        }
+
+                        const submitButton = form.querySelector('.task-comment-submit');
+                        if (submitButton) {
+                            submitButton.disabled = true;
+                        }
+
+                        const taskId = taskCard.dataset.taskId;
+
+                        sendComment(taskId, content)
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error('Request failed');
+                                }
+
+                                return response.json();
+                            })
+                            .then(data => {
+                                if (!data || !data.success || !data.comment) {
+                                    throw new Error('Unexpected response');
+                                }
+
+                                const list = taskCard.querySelector('[data-comment-list]');
+                                const section = taskCard.querySelector('[data-comment-section]');
+                                if (!list || !section) {
+                                    return;
+                                }
+
+                                const commentElement = createCommentElement(data.comment);
+                                list.appendChild(commentElement);
+                                textarea.value = '';
+                                toggleCommentEmptyState(section);
+                            })
+                            .catch(error => {
+                                console.error('Failed to add comment.', error);
+                                window.alert('Unable to save the comment. Please try again.');
+                            })
+                            .finally(() => {
+                                if (submitButton) {
+                                    submitButton.disabled = false;
+                                }
+                            });
+                    });
+                });
+            };
+
+            const attachAssignmentHandlers = () => {
+                document.querySelectorAll('[data-assignee-select]').forEach(select => {
+                    if (select.dataset.initialised === 'true') {
+                        return;
+                    }
+
+                    select.dataset.initialised = 'true';
+                    select.dataset.previousValue = select.value;
+
+                    select.addEventListener('change', () => {
+                        const taskCard = select.closest('.task-card');
+                        if (!taskCard) {
+                            return;
+                        }
+
+                        const taskId = taskCard.dataset.taskId;
+                        if (!taskId) {
+                            return;
+                        }
+
+                        const previousValue = select.dataset.previousValue ?? (taskCard.dataset.assignedUserId ?? '');
+                        const displayElement = taskCard.querySelector('[data-assignee-display]');
+                        const emailElement = taskCard.querySelector('[data-assignee-email]');
+                        const previousDisplay = displayElement ? displayElement.textContent : 'Unassigned';
+                        const previousEmail = emailElement && !emailElement.hasAttribute('hidden') ? emailElement.textContent : null;
+
+                        const selectedValue = select.value;
+                        select.disabled = true;
+
+                        sendAssignment(taskId, selectedValue && selectedValue.length > 0 ? selectedValue : null)
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error('Request failed');
+                                }
+
+                                return response.json().catch(() => ({ assignedUser: null }));
+                            })
+                            .then(data => {
+                                const assignment = data.assignedUser ?? null;
+                                updateAssignmentDisplay(taskCard, assignment);
+                            })
+                            .catch(() => {
+                                select.value = previousValue;
+                                const fallback = previousValue && previousValue.length > 0
+                                    ? { id: previousValue, displayName: previousDisplay, email: previousEmail }
+                                    : null;
+                                updateAssignmentDisplay(taskCard, fallback);
+                            })
+                            .finally(() => {
+                                select.disabled = false;
+                            });
+                    });
+                });
+            };
+
+            const updateCompletionLink = (taskElement, completionUrl) => {
+                if (!taskElement) {
+                    return;
+                }
+
+                const section = taskElement.querySelector('[data-completion-section]');
+                const link = taskElement.querySelector('[data-completion-link]');
+                const indicator = taskElement.querySelector('[data-git-indicator]');
+                const hasUrl = typeof completionUrl === 'string' && completionUrl.trim().length > 0;
+
+                if (section) {
+                    if (hasUrl) {
+                        section.removeAttribute('hidden');
+                    } else {
+                        section.setAttribute('hidden', 'hidden');
+                    }
+                }
+
+                if (link) {
+                    link.setAttribute('href', hasUrl ? completionUrl : '#');
+                }
+
+                if (indicator) {
+                    indicator.setAttribute('href', hasUrl ? completionUrl : '#');
+                    if (hasUrl) {
+                        indicator.removeAttribute('hidden');
+                    } else {
+                        indicator.setAttribute('hidden', 'hidden');
+                    }
+                }
+            };
+
+            const getCompletionUrlFromCard = (taskElement) => {
+                if (!taskElement) {
+                    return '';
+                }
+
+                const link = taskElement.querySelector('[data-completion-link]');
+                if (!link) {
+                    return '';
+                }
+
+                const href = link.getAttribute('href');
+                if (!href || href === '#') {
+                    return '';
+                }
+
+                return href;
+            };
+
+            attachEstimateHandlers();
+            attachCommentHandlers();
+            attachAssignmentHandlers();
+
+            document.querySelectorAll('.kanban-column-tasks').forEach(column => {
+                new Sortable(column, {
+                    group: 'kanban-tasks',
+                    animation: 180,
+                    ghostClass: 'task-card-ghost',
+                    dragClass: 'task-card-dragging',
+                    chosenClass: 'task-card-chosen',
+                    onEnd(evt) {
+                        const item = evt.item;
+                        const newContainer = evt.to;
+                        const oldContainer = evt.from;
+                        const newStatus = newContainer.dataset.status;
+                        const previousStatus = item.dataset.taskStatus || (oldContainer ? oldContainer.dataset.status : '');
+                        const taskId = item.dataset.taskId;
+                        const oldIndex = evt.oldIndex;
+
+                        if (oldContainer) {
+                            oldContainer.classList.remove('is-drag-over');
+                        }
+                        if (newContainer) {
+                            newContainer.classList.remove('is-drag-over');
+                        }
+
+                        const revert = () => {
+                            if (!oldContainer) {
+                                return;
+                            }
+
+                            if (oldContainer.children.length > oldIndex) {
+                                oldContainer.insertBefore(item, oldContainer.children[oldIndex]);
+                            } else {
+                                oldContainer.appendChild(item);
+                            }
+
+                            item.dataset.taskStatus = previousStatus;
+                            updateBadge(item, previousStatus);
+                            updateColumnSummaries();
+                        };
+
+                        if (!taskId || !newStatus) {
+                            revert();
+                            return;
+                        }
+
+                        const statusChanged = previousStatus !== newStatus;
+
+                        const executeUpdate = (completionUrl, shouldUpdateCompletionUrl) => {
+                            sendUpdate(taskId, newStatus, {
+                                includeCompletionUrl: shouldUpdateCompletionUrl,
+                                completionUrl
+                            })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error('Request failed');
+                                    }
+
+                                    return response
+                                        .json()
+                                        .catch(() => ({ status: newStatus }));
+                                })
+                                .then(data => {
+                                    const confirmedStatus = data.status || newStatus;
+                                    item.dataset.taskStatus = confirmedStatus;
+                                    updateBadge(item, confirmedStatus);
+                                    updateColumnSummaries();
+
+                                    const hasCompletionFromResponse = Object.prototype.hasOwnProperty.call(data, 'completionUrl');
+                                    const completionValue = hasCompletionFromResponse
+                                        ? data.completionUrl
+                                        : (shouldUpdateCompletionUrl ? completionUrl ?? null : undefined);
+
+                                    if (completionValue !== undefined) {
+                                        updateCompletionLink(item, completionValue);
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Failed to update task status.', error);
+                                    if (statusChanged) {
+                                        revert();
+                                    }
+                                    window.alert('We could not update the task status. Please try again.');
+                                });
+                        };
+
+                        if (!statusChanged) {
+                            item.dataset.taskStatus = newStatus;
+                            updateBadge(item, newStatus);
+                            updateColumnSummaries();
+
+                            if (isDoneStatus(newStatus)) {
+                                const currentUrl = getCompletionUrlFromCard(item);
+                                requestCompletionUrl(currentUrl)
+                                    .then(result => {
+                                        if (result.canceled) {
+                                            return;
+                                        }
+
+                                        executeUpdate(result.url ?? null, true);
+                                    });
+                            }
+
+                            return;
+                        }
+
+                        if (isDoneStatus(newStatus)) {
+                            const currentUrl = getCompletionUrlFromCard(item);
+                            requestCompletionUrl(currentUrl)
+                                .then(result => {
+                                    if (result.canceled) {
+                                        revert();
+                                        return;
+                                    }
+
+                                    executeUpdate(result.url ?? null, true);
+                                });
+                            return;
+                        }
+
+                        executeUpdate(undefined, false);
+                    },
+                    onOver(evt) {
+                        if (evt.to) {
+                            evt.to.classList.add('is-drag-over');
+                        }
+                    },
+                    onLeave(evt) {
+                        if (evt.from) {
+                            evt.from.classList.remove('is-drag-over');
+                        }
+                        if (evt.to) {
+                            evt.to.classList.remove('is-drag-over');
+                        }
+                    }
+                });
+            });
+
+            updateColumnSummaries();
+        });
+    </script>
+}
