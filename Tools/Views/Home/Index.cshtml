@@ -1,0 +1,79 @@
+@{
+    ViewData["Title"] = "Launch smarter web projects";
+}
+
+<section class="hero">
+    <div class="hero-content text-center text-lg-start">
+        <p class="section-title mb-3">AI website delivery workspace</p>
+        <h1 class="hero-title">Launch smarter web projects in record time</h1>
+        <p class="hero-lead">
+            Choose the capabilities your product needs, hand the brief to our Gemini-powered planner,
+            and receive a complete backlog, task board, and project estimate inside a single workspace.
+            From the first idea to assigning the last task, everything stays orchestrated for your team.
+        </p>
+        <div class="d-flex flex-column flex-sm-row gap-3 justify-content-center justify-content-lg-start">
+            <a class="btn-gradient" asp-controller="Project" asp-action="CreateWizard">Start the project wizard</a>
+            <a class="btn btn-outline-primary rounded-pill px-4" asp-controller="Project" asp-action="Index">Browse saved projects</a>
+        </div>
+    </div>
+</section>
+
+<section id="features" class="container">
+    <p class="section-title">Platform highlights</p>
+    <div class="feature-grid">
+        <article class="feature-card">
+            <div class="feature-icon">🧭</div>
+            <h3>Curated feature library</h3>
+            <p>Explore 80+ pre-modelled website capabilities with nested sub-features to assemble the exact scope your clients expect.</p>
+        </article>
+        <article class="feature-card">
+            <div class="feature-icon">🤖</div>
+            <h3>Gemini backlog generation</h3>
+            <p>Send your selections to Google Gemini and instantly produce a structured task list, complete with technical descriptions and effort estimates.</p>
+        </article>
+        <article class="feature-card">
+            <div class="feature-icon">📋</div>
+            <h3>Kanban built-in</h3>
+            <p>Track delivery with an interactive board that keeps To Do, In Progress, and Done tasks in sync alongside comments and status updates.</p>
+        </article>
+        <article class="feature-card">
+            <div class="feature-icon">💰</div>
+            <h3>Real-time project estimates</h3>
+            <p>Understand resourcing at a glance with automatic hour and cost rollups for every assignee, ready for stakeholder reports.</p>
+        </article>
+    </div>
+
+    <p class="section-title">How it works</p>
+    <div class="feature-grid">
+        <article class="feature-card">
+            <div class="feature-icon">1</div>
+            <h3>Select your blueprint</h3>
+            <p>Use the guided wizard to pick the site archetype—corporate, e-commerce, content hub, or portfolio—and drill into the modules that matter.</p>
+        </article>
+        <article class="feature-card">
+            <div class="feature-icon">2</div>
+            <h3>Generate your backlog</h3>
+            <p>Connect your Gemini API key and let the platform translate scope into a ready-to-execute plan with actionable, sized tasks.</p>
+        </article>
+        <article class="feature-card">
+            <div class="feature-icon">3</div>
+            <h3>Collaborate & deliver</h3>
+            <p>Invite teammates, assign owners, capture comments, and keep estimations current without jumping between tools.</p>
+        </article>
+    </div>
+
+    <div class="stat-bar">
+        <div class="stat">
+            <div class="stat-value">89</div>
+            <div class="stat-label">Curated capabilities</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">1 wizard</div>
+            <div class="stat-label">Scope to backlog</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">∞</div>
+            <div class="stat-label">Projects to revisit</div>
+        </div>
+    </div>
+</section>
